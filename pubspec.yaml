@@ -1,0 +1,24 @@
+name: nova_downloader
+description: "NOVA Downloader — API-only mobile downloader (Flutter). Resolves links
+  through the NOVA Downloader API and downloads files directly from CDNs."
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.5.0
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.2
+  material_ui: ^1.11.1
+  path_provider: ^2.1.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
