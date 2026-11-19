@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -14,7 +13,6 @@ import 'package:nova_downloader/ui/home_screen.dart';
 void main() {
   testWidgets('paste link -> resolve -> quality sheet shows all qualities',
       (tester) async {
-    debugPrint('PROBE: test start');
     final client = MockClient((request) async {
       if (request.url.path == '/api/health') {
         return http.Response('{"ok":true}', 200);
@@ -49,8 +47,16 @@ void main() {
       );
     });
     final api = ApiClient(client: client);
-    final tmp = await Directory.systemTemp.createTemp('nova-widget-test-');
-    addTearDown(() => tmp.delete(recursive: true));
+    // Sync temp-dir creation. ROOT CAUSE of the old timeout: awaiting
+    // Directory.systemTemp.createTemp() inside a testWidgets body before
+    // the first pump deadlocks — the I/O completion microtask sits in the
+    // test's fake-async queue and nothing drains it until a pump runs.
+    // (Proved by bisect: the test printed "test start" and "api created"
+    // and then hung on createTemp; the sibling widget test, which never
+    // awaited dart:io, passed.) Sync APIs complete inline and never wait
+    // on the fake-async queue.
+    final tmp = Directory.systemTemp.createTempSync('nova-widget-test-');
+    addTearDown(() => tmp.deleteSync(recursive: true));
     final manager = DownloadManager(
       fileSaver: (tempPath, name, mime) async {
         final dest = File('${tmp.path}/$name');
@@ -73,27 +79,20 @@ void main() {
         ),
       ),
     );
-    debugPrint('PROBE: pumped widget');
 
     await tester.enterText(
       find.byType(TextField),
       'https://www.youtube.com/watch?v=abc',
     );
-    debugPrint('PROBE: entered text');
     await tester.pump();
-    debugPrint('PROBE: pumped after enter');
     expect(find.textContaining('Detected: YouTube'), findsOneWidget);
 
     await tester.tap(find.text('Find downloads'));
-    debugPrint('PROBE: tapped Find downloads');
     // Bounded pumps only: pumpAndSettle() never settles here because the
-    // resolving spinner animates while the (mock) resolve is in flight,
-    // and the download started by the quality tap keeps real timers alive.
+    // resolving spinner animates while the (mock) resolve is in flight.
     for (var i = 0; i < 5; i++) {
       await tester.pump(const Duration(milliseconds: 100));
-      debugPrint('PROBE: pumped $i');
     }
-    debugPrint('PROBE: pumps done');
 
     // Quality sheet: title + all three qualities.
     expect(find.text('Widget test video'), findsOneWidget);
@@ -102,17 +101,19 @@ void main() {
     expect(find.text('Audio only'), findsOneWidget);
     expect(find.textContaining('Audio only'), findsWidgets);
 
-    // Tapping a quality starts a download (against the fake CDN it will
-    // fail in the background — the point here is the tap wires through to
-    // the manager). No pumpAndSettle: the download keeps timers alive.
-    // TEMPORARILY DISABLED (bisect): is the quality tap what hangs the test?
-    // await tester.tap(find.text('720p'));
-    // await tester.pump();
-    // await tester.pump(const Duration(milliseconds: 100));
-    // expect(manager.tasks.length, 1);
-    // expect(manager.tasks.first.quality.label, '720p');
+    // Tapping a quality enqueues a download in the manager. This asserts
+    // the wiring only — the actual download is NOT awaited here: real
+    // HttpClient/network I/O is mocked out by the widget-test binding
+    // (all requests return 400, no network is made), and the download
+    // engine itself is covered by download_manager_test.dart, which runs
+    // as plain tests against a real loopback server. No pumps after the
+    // tap and no status assertion, so the test ends while the task is
+    // still queued/downloading, with no pending timers.
+    await tester.tap(find.text('720p'));
+    expect(manager.tasks.length, 1);
+    expect(manager.tasks.first.quality.label, '720p');
     api.close();
-  }, timeout: const Timeout(Duration(minutes: 2)));
+  });
 
   testWidgets('unsupported platform shows an honest message',
       (tester) async {
