@@ -10,6 +10,7 @@ import '../api/api_client.dart';
 import '../api/models.dart';
 import '../api/platform_detect.dart';
 import '../download/download_manager.dart';
+import '../download/hls_downloader.dart';
 import '../theme/nebula.dart';
 import 'format.dart';
 
@@ -19,12 +20,19 @@ class HomeScreen extends StatefulWidget {
   final bool apiHealthy;
   final VoidCallback onDownloadStarted;
 
+  /// Links shared into the app from other apps (MainActivity forwards
+  /// ACTION_SEND text here). When a link arrives it is placed in the
+  /// link field automatically. Null when the host does not provide one
+  /// (e.g. in widget tests that do not pass a notifier).
+  final ValueNotifier<String?>? incomingLink;
+
   const HomeScreen({
     super.key,
     required this.api,
     required this.downloads,
     required this.apiHealthy,
     required this.onDownloadStarted,
+    this.incomingLink,
   });
 
   @override
@@ -38,7 +46,24 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _detected;
 
   @override
+  void initState() {
+    super.initState();
+    widget.incomingLink?.addListener(_onIncomingLink);
+    // A link shared while the app was cold may already be waiting.
+    _onIncomingLink();
+  }
+
+  void _onIncomingLink() {
+    final link = widget.incomingLink?.value;
+    if (link == null || link.isEmpty) return;
+    widget.incomingLink?.value = null;
+    _linkController.text = link;
+    _onLinkChanged(link);
+  }
+
+  @override
   void dispose() {
+    widget.incomingLink?.removeListener(_onIncomingLink);
     _linkController.dispose();
     super.dispose();
   }
@@ -106,6 +131,10 @@ class _HomeScreenState extends State<HomeScreen> {
     String url,
     String platform,
   ) async {
+    // The State's context, captured before the sheet builders shadow it
+    // with their own — the SnackBar after the sheet pops must use this
+    // one, not the sheet's (deactivated) context.
+    final pageContext = context;
     // Combined formats first, then video-only, then audio-only.
     final qualities = List<Quality>.from(result.qualities)
       ..sort((a, b) {
@@ -119,7 +148,7 @@ class _HomeScreenState extends State<HomeScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) {
+      builder: (sheetContext) {
         return DraggableScrollableSheet(
           expand: false,
           initialChildSize: 0.7,
@@ -201,9 +230,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                     quality: q,
                                     platform: platform,
                                   );
-                                  Navigator.of(context).pop();
+                                  Navigator.of(sheetContext).pop();
                                   widget.onDownloadStarted();
-                                  ScaffoldMessenger.of(context).showSnackBar(
+                                  // The sheet's context is deactivated by
+                                  // the pop above — the SnackBar must use
+                                  // the page context captured in
+                                  // _showQualitySheet, which stays live.
+                                  ScaffoldMessenger.of(pageContext)
+                                      .showSnackBar(
                                     SnackBar(
                                       content: Text(
                                         'Downloading ${q.label} — see the Downloads tab.',
@@ -388,12 +422,16 @@ class _QualityRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // HLS qualities save as the concatenated media (.ts, or .mp4 for
+    // fragmented MP4) — never promise the playlist extension as the file.
+    final extLabel = isHlsQuality(quality)
+        ? ' · HLS stream'
+        : (quality.ext.isNotEmpty ? ' · .${quality.ext}' : '');
     return Card(
       child: ListTile(
         title: Text(quality.label),
         subtitle: Text(
-          '${quality.kindLabel} · ${formatBytes(quality.size)}'
-          '${quality.ext.isNotEmpty ? ' · .${quality.ext}' : ''}',
+          '${quality.kindLabel} · ${formatBytes(quality.size)}$extLabel',
         ),
         trailing: IconButton(
           icon: const Icon(Icons.download, color: NebulaColors.primary),

@@ -83,9 +83,7 @@ class _TaskCard extends StatelessWidget {
                 LinearProgressIndicator(
                   value: status == DownloadStatus.completed
                       ? 1
-                      : (task.totalBytes != null && task.totalBytes! > 0
-                          ? task.progress
-                          : null),
+                      : (task.progress > 0 ? task.progress : null),
                   backgroundColor: Colors.white.withValues(alpha: 0.1),
                   color: status == DownloadStatus.failed
                       ? NebulaColors.error

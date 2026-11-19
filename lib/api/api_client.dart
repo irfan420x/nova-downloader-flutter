@@ -129,32 +129,24 @@ class ApiClient {
 
   Future<http.Response> _postWithRetry(Uri uri, String url) async {
     try {
-      return await _client
-          .post(
-            uri,
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'url': url}),
-          )
-          .timeout(resolveTimeout);
+      return await _postOnce(uri, url);
     } on TimeoutException {
       // One retry — the first call may have hit a cold start.
-      return await _client
-          .post(
-            uri,
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'url': url}),
-          )
-          .timeout(resolveTimeout);
+      return await _postOnce(uri, url);
     } on SocketException {
       // One retry on a transient network failure.
-      return await _client
-          .post(
-            uri,
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'url': url}),
-          )
-          .timeout(resolveTimeout);
+      return await _postOnce(uri, url);
     }
+  }
+
+  Future<http.Response> _postOnce(Uri uri, String url) {
+    return _client
+        .post(
+          uri,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'url': url}),
+        )
+        .timeout(resolveTimeout);
   }
 
   ResolveResult _parseResolveResponse(

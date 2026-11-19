@@ -106,7 +106,9 @@ String? detectPlatform(String url) {
   for (final entry in unsupportedHosts.entries) {
     if (_hostMatches(host, entry.value)) return entry.key;
   }
-  if (url.toLowerCase().contains('.m3u8')) return 'hls';
+  // HLS only when the URL's PATH ends in .m3u8 — a query string that
+  // merely mentions ".m3u8" must not route here (audit F-7).
+  if (uri.path.toLowerCase().endsWith('.m3u8')) return 'hls';
   return 'direct';
 }
 

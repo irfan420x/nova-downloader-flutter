@@ -60,6 +60,19 @@ class Quality {
   /// All candidate URLs to try in order: primary first, then alternates.
   List<String> get candidateUrls => [url, ...alternates];
 
+  /// Serialise back to the API shape (used by the persisted queue).
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'label': label,
+        'ext': ext,
+        'url': url,
+        'alternates': alternates,
+        'headers': headers,
+        'size': size,
+        'videoOnly': videoOnly,
+        'audioOnly': audioOnly,
+      };
+
   /// Human-readable kind badge: "Video + audio", "Video only", "Audio only".
   String get kindLabel {
     if (audioOnly) return 'Audio only';

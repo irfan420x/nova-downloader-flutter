@@ -23,9 +23,20 @@ import java.io.FileInputStream
 class MainActivity : FlutterActivity() {
     private val channelName = "nova_downloader/files"
 
+    /** The channel to Dart, once the engine is configured. */
+    private var filesChannel: MethodChannel? = null
+
+    /** A shared link that arrived before the engine was ready. */
+    private var pendingSharedText: String? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
+        val channel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            channelName,
+        )
+        filesChannel = channel
+        channel
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "moveToDownloads" -> {
@@ -57,11 +68,44 @@ class MainActivity : FlutterActivity() {
                     }
                     "deleteFile" -> {
                         val location = call.argument<String>("location") ?: ""
-                        result.success(deleteFile(location))
+                        result.success(deleteDownloadFile(location))
                     }
                     else -> result.notImplemented()
                 }
             }
+        // A link shared while the app was cold arrives with the launch
+        // intent; one shared while the app is running arrives later via
+        // onNewIntent (launchMode is singleTop).
+        pendingSharedText?.let { text ->
+            channel.invokeMethod("sharedLink", text)
+            pendingSharedText = null
+        }
+        handleSharedIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleSharedIntent(intent)
+    }
+
+    /**
+     * "Share -> NOVA Downloader" from another app (ACTION_SEND, text/plain).
+     * Forwards Intent.EXTRA_TEXT to Dart as 'sharedLink', which prefills
+     * the link field on the Home tab. Links arriving before the engine is
+     * ready are stashed and flushed in configureFlutterEngine.
+     */
+    private fun handleSharedIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_SEND) return
+        if (intent.type?.startsWith("text/") != true) return
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim()
+        if (text.isNullOrEmpty()) return
+        val channel = filesChannel
+        if (channel != null) {
+            channel.invokeMethod("sharedLink", text)
+        } else {
+            pendingSharedText = text
+        }
     }
 
     private fun moveToDownloads(tempPath: String, displayName: String, mimeType: String): String? {
@@ -71,7 +115,7 @@ class MainActivity : FlutterActivity() {
             put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
             put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOAD)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
         }
@@ -141,7 +185,7 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun deleteFile(location: String): Boolean {
+    private fun deleteDownloadFile(location: String): Boolean {
         return try {
             if (location.startsWith("content://")) {
                 contentResolver.delete(Uri.parse(location), null, null) > 0

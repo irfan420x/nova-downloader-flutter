@@ -12,13 +12,36 @@ import 'api/api_client.dart';
 import 'download/download_manager.dart';
 import 'download/downloads_channel.dart';
 import 'download/history_store.dart';
+import 'download/queue_store.dart';
 import 'theme/nebula.dart';
 import 'ui/downloads_screen.dart';
 import 'ui/history_screen.dart';
 import 'ui/home_screen.dart';
 
-void main() {
-  runApp(const NovaDownloaderApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final api = ApiClient();
+  final downloads = DownloadManager(
+    fileSaver: defaultFileSaver,
+    queueStore: QueueStore(),
+  );
+  final history = HistoryStore();
+  // Restore before the first frame so interrupted downloads are visible
+  // immediately (as Paused) instead of popping in later.
+  await downloads.restore();
+  await history.load();
+  final sharedLink = ValueNotifier<String?>(null);
+  DownloadsChannel.setSharedLinkHandler((link) {
+    sharedLink.value = link;
+  });
+  runApp(
+    NovaDownloaderApp(
+      api: api,
+      downloads: downloads,
+      history: history,
+      sharedLink: sharedLink,
+    ),
+  );
 }
 
 /// Default file saver: on Android, move the finished file into the public
@@ -37,7 +60,9 @@ Future<String?> defaultFileSaver(
     );
     if (uri != null) return uri;
     // Channel unavailable (e.g. running under `flutter test` or an old
-    // build): fall back to a plain copy into the Downloads directory.
+    // build): fall through to the plain copy below, which on Android 10+
+    // is blocked by scoped storage and returns null — the download then
+    // fails with an honest message instead of a silent loss.
   }
   try {
     final downloads = await getDownloadsDirectory();
@@ -51,7 +76,18 @@ Future<String?> defaultFileSaver(
 }
 
 class NovaDownloaderApp extends StatefulWidget {
-  const NovaDownloaderApp({super.key});
+  final ApiClient api;
+  final DownloadManager downloads;
+  final HistoryStore history;
+  final ValueNotifier<String?> sharedLink;
+
+  const NovaDownloaderApp({
+    super.key,
+    required this.api,
+    required this.downloads,
+    required this.history,
+    required this.sharedLink,
+  });
 
   @override
   State<NovaDownloaderApp> createState() => _NovaDownloaderAppState();
@@ -65,13 +101,15 @@ class _NovaDownloaderAppState extends State<NovaDownloaderApp> {
   bool _healthChecked = false;
   int _tabIndex = 0;
 
+  /// Task ids already recorded in history, so a task is never logged twice.
+  final Set<String> _recorded = {};
+
   @override
   void initState() {
     super.initState();
-    _api = ApiClient();
-    _downloads = DownloadManager(fileSaver: defaultFileSaver);
-    _history = HistoryStore();
-    _history.load();
+    _api = widget.api;
+    _downloads = widget.downloads;
+    _history = widget.history;
     _downloads.addListener(_onDownloadsChanged);
     _checkHealth();
   }
@@ -89,6 +127,7 @@ class _NovaDownloaderAppState extends State<NovaDownloaderApp> {
               task.status == DownloadStatus.failed) &&
           !_recorded.contains(task.id)) {
         _recorded.add(task.id);
+        final completed = task.status == DownloadStatus.completed;
         _history.add(
           HistoryEntry(
             title: task.title,
@@ -97,16 +136,16 @@ class _NovaDownloaderAppState extends State<NovaDownloaderApp> {
             qualityLabel: task.quality.label,
             fileName: task.fileName,
             savedLocation: task.savedLocation,
-            sizeBytes: task.downloadedBytes,
+            // Only a finished file has a real size — a failed entry's
+            // partial bytes are not the file size (audit F-3 note).
+            sizeBytes: completed ? task.downloadedBytes : null,
             completedAt: DateTime.now(),
-            success: task.status == DownloadStatus.completed,
+            success: completed,
           ),
         );
       }
     }
   }
-
-  final Set<String> _recorded = {};
 
   Future<void> _checkHealth() async {
     // Fetch the API's endpoint list too, so future endpoints light up
@@ -128,6 +167,7 @@ class _NovaDownloaderAppState extends State<NovaDownloaderApp> {
         api: _api,
         downloads: _downloads,
         apiHealthy: _apiHealthy,
+        incomingLink: widget.sharedLink,
         onDownloadStarted: () => setState(() => _tabIndex = 1),
       ),
       DownloadsScreen(manager: _downloads),

@@ -1,7 +1,7 @@
 // NOVA Nebula Dark Premium theme values.
-// Source: MOBILE-FLUTTER-ASSIGNMENT-MUSE2-2026-11-19.md (the design spec
-// file ~/workspace/nova-design/NOVA-NEBULA-DESIGN.md does not exist on this
-// machine, so these values are taken from the assignment note itself).
+// Source: ~/workspace/nova-design/NOVA-NEBULA-DESIGN.md
+// (background #0A0C1C, cards #14172B, primary #8B5CF6, gradient
+// #7C3AED -> #3B82F6, secondary #22D3EE, pink #EC4899).
 import 'package:material_ui/material_ui.dart';
 
 class NebulaColors {

@@ -40,6 +40,17 @@ Full verification of the API (live calls, routing table from
   formats sort first.
 - Download manager: queue, pause/resume via HTTP `Range`, progress,
   cancel, retry, per-file log.
+- **HLS (.m3u8) downloads properly**: the playlist is fetched, the best
+  variant chosen, and every media segment downloaded and concatenated
+  into one playable file (`.ts`, or `.mp4` for fragmented MP4 with an
+  init segment). Encrypted streams and live streams are refused
+  honestly instead of saving junk.
+- **The queue survives an app kill**: queued/downloading tasks are
+  persisted and restored as Paused with their `.part` progress intact —
+  tap Resume to continue. No foreground service yet, so Android may
+  still kill a backgrounded download silently.
+- **Share into the app**: "Share → NOVA Downloader" from any app
+  prefills the link field on the Home tab.
 - Per-quality headers (Cookie, Referer, User-Agent) are sent on **both**
   the probe and the download; primary URL + alternates are tried in order.
 - Files saved to the public **Downloads** folder (Android: MediaStore via
@@ -52,8 +63,17 @@ Full verification of the API (live calls, routing table from
 - Platforms with no API endpoint yet — Instagram, Pinterest, Twitch,
   Reddit, Vimeo, Dailymotion — show an honest "not supported yet" message.
   Never faked.
-- Where only separate video+audio exist, both are downloaded and labelled
-  clearly. Merging is deferred — the app never fakes a merged file.
+## Honest limits (v1.0.0)
+
+- Video-only + audio-only parts are downloaded separately and labelled
+  clearly. Merging is not supported yet — the app never fakes a merged file.
+- One download at a time (serial queue); parallel downloads are a future
+  feature, not a defect.
+- No foreground service yet: a download can be killed silently if Android
+  reclaims the app in the background. The queue itself survives (see
+  above) — only the running transfer is interrupted.
+- HLS: encrypted (`#EXT-X-KEY`) and live (no `#EXT-X-ENDLIST`) streams
+  are refused with an honest message.
 
 ## Design
 

@@ -71,4 +71,16 @@ class DownloadsChannel {
       return false;
     }
   }
+
+  /// Register the handler for links shared into the app from other apps
+  /// (ACTION_SEND / text/plain — MainActivity forwards Intent.EXTRA_TEXT
+  /// as the 'sharedLink' method call). Call once at startup.
+  static void setSharedLinkHandler(void Function(String link) onLink) {
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'sharedLink') {
+        final text = call.arguments as String?;
+        if (text != null && text.trim().isNotEmpty) onLink(text.trim());
+      }
+    });
+  }
 }
