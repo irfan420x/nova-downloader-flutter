@@ -24,9 +24,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../api/models.dart';
+import 'downloads_channel.dart';
 import 'hls_downloader.dart';
 import 'queue_store.dart';
 
@@ -235,6 +235,7 @@ class DownloadManager extends ChangeNotifier {
   final FileSaver? fileSaver;
   final HttpClient Function()? httpClientFactory;
   final Directory Function()? tempDirOverride;
+  final Future<Directory> Function()? tempDirResolver;
   final QueueStore? queueStore;
 
   final List<DownloadTask> tasks = [];
@@ -255,11 +256,20 @@ class DownloadManager extends ChangeNotifier {
     this.fileSaver,
     this.httpClientFactory,
     this.tempDirOverride,
+    this.tempDirResolver,
     this.queueStore,
   });
 
-  Future<Directory> get _tempDir async =>
-      tempDirOverride != null ? tempDirOverride!() : await getTemporaryDirectory();
+  /// Temp dir for `.part` files. Tests inject [tempDirOverride]; the app
+  /// wires [tempDirResolver] (host channel — plain Context.cacheDir, no
+  /// path_provider, whose JNI lookup crashed the v1.0.0 release build on
+  /// the first download). The channel call itself is the last resort, so
+  /// a manager built with neither still works on Android.
+  Future<Directory> get _tempDir async {
+    if (tempDirOverride != null) return tempDirOverride!();
+    if (tempDirResolver != null) return tempDirResolver!();
+    return Directory(await DownloadsChannel.getCacheDir());
+  }
 
   /// Restore the persisted queue (call once at startup, before the UI
   /// shows the Downloads tab). Tasks that were downloading or queued when

@@ -58,6 +58,16 @@ android {
             // Signed with the NOVA release keystore (see key.properties).
             // Never fall back to debug keys for a release build.
             signingConfig = signingConfigs.getByName("release")
+            // R8 is OFF: the v1.0.0 release build ran R8 with no
+            // keep-rules and stripped io.flutter.util.PathUtils, which
+            // path_provider_android resolves through JNI — the first
+            // download on a real phone crashed with ClassNotFoundException:
+            // android/content/Context. A slightly bigger unobfuscated APK
+            // is acceptable; this removes the whole class of release-only
+            // stripping failures. (The download path no longer uses
+            // path_provider at all — see DownloadsChannel.getCacheDir.)
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }

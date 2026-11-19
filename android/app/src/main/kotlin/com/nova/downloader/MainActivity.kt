@@ -70,6 +70,18 @@ class MainActivity : FlutterActivity() {
                         val location = call.argument<String>("location") ?: ""
                         result.success(deleteDownloadFile(location))
                     }
+                    // Plain Context.cacheDir / filesDir — no JNI, no
+                    // PathUtils. v1.0.0 resolved these through
+                    // path_provider, whose JNI lookup of
+                    // android/content/Context crashed the first download
+                    // on a real phone (ClassNotFoundException in the R8
+                    // release build). The host answers directly here.
+                    "getCacheDir" -> {
+                        result.success(cacheDir.absolutePath)
+                    }
+                    "getFilesDir" -> {
+                        result.success(filesDir.absolutePath)
+                    }
                     else -> result.notImplemented()
                 }
             }

@@ -5,7 +5,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
+
+import 'downloads_channel.dart';
 
 class HistoryEntry {
   final String title;
@@ -65,12 +66,19 @@ class HistoryEntry {
 class HistoryStore extends ChangeNotifier {
   final List<HistoryEntry> entries = [];
   final Directory? dirOverride;
+  final Future<Directory> Function()? dirResolver;
   bool _loaded = false;
 
-  HistoryStore({this.dirOverride});
+  HistoryStore({this.dirOverride, this.dirResolver});
 
-  Future<Directory> get _dir async =>
-      dirOverride ?? await getApplicationDocumentsDirectory();
+  /// App documents dir. Tests inject [dirOverride]; the app wires
+  /// [dirResolver] (host channel — plain Context.filesDir, no
+  /// path_provider, whose JNI lookup crashed the v1.0.0 release build).
+  Future<Directory> get _dir async {
+    if (dirOverride != null) return dirOverride!;
+    if (dirResolver != null) return dirResolver!();
+    return Directory(await DownloadsChannel.getFilesDir());
+  }
 
   Future<File> get _file async =>
       File('${(await _dir).path}/download_history.json');

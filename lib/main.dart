@@ -6,7 +6,6 @@
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:path_provider/path_provider.dart';
 
 import 'api/api_client.dart';
 import 'download/download_manager.dart';
@@ -21,11 +20,21 @@ import 'ui/home_screen.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final api = ApiClient();
+  // Directory resolution goes through the host channel (MainActivity:
+  // plain Context.cacheDir / filesDir) — never through path_provider,
+  // whose JNI lookup crashed the v1.0.0 release build on the first
+  // download (ClassNotFoundException: android/content/Context).
   final downloads = DownloadManager(
     fileSaver: defaultFileSaver,
-    queueStore: QueueStore(),
+    queueStore: QueueStore(
+      dirResolver: () async => Directory(await DownloadsChannel.getFilesDir()),
+    ),
+    tempDirResolver: () async =>
+        Directory(await DownloadsChannel.getCacheDir()),
   );
-  final history = HistoryStore();
+  final history = HistoryStore(
+    dirResolver: () async => Directory(await DownloadsChannel.getFilesDir()),
+  );
   // Restore before the first frame so interrupted downloads are visible
   // immediately (as Paused) instead of popping in later.
   await downloads.restore();
@@ -45,8 +54,10 @@ Future<void> main() async {
 }
 
 /// Default file saver: on Android, move the finished file into the public
-/// Downloads folder via MediaStore (platform channel); elsewhere, copy it
-/// into the public Downloads directory when available.
+/// Downloads folder via MediaStore (platform channel); if the channel is
+/// unavailable, copy it into the app-private files dir instead (the public
+/// folder is unreachable on Android 10+ without the channel). Elsewhere,
+/// the finished file stays where it is.
 Future<String?> defaultFileSaver(
   String tempPath,
   String displayName,
@@ -60,19 +71,21 @@ Future<String?> defaultFileSaver(
     );
     if (uri != null) return uri;
     // Channel unavailable (e.g. running under `flutter test` or an old
-    // build): fall through to the plain copy below, which on Android 10+
-    // is blocked by scoped storage and returns null — the download then
-    // fails with an honest message instead of a silent loss.
+    // build): copy into the app-private files dir. A failed copy returns
+    // null and the download fails with an honest message instead of a
+    // silent loss.
+    try {
+      final dir = await DownloadsChannel.getFilesDir();
+      final dest = File('$dir/$displayName');
+      await File(tempPath).copy(dest.path);
+      return dest.path;
+    } catch (_) {
+      return null;
+    }
   }
-  try {
-    final downloads = await getDownloadsDirectory();
-    final targetDir = downloads ?? await getApplicationDocumentsDirectory();
-    final dest = File('${targetDir.path}/$displayName');
-    await File(tempPath).copy(dest.path);
-    return dest.path;
-  } catch (_) {
-    return null;
-  }
+  // Other platforms have no channel: the finished file stays where it
+  // is, and the caller keeps a valid path to it.
+  return tempPath;
 }
 
 class NovaDownloaderApp extends StatefulWidget {

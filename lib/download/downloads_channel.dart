@@ -72,6 +72,34 @@ class DownloadsChannel {
     }
   }
 
+  /// App cache dir (Android: Context.cacheDir) from the host channel.
+  /// Throws a clear [Exception] when the host returns nothing — the
+  /// download path cannot run without a temp dir, and the failure must
+  /// surface as a failed task, not a crash.
+  static Future<String> getCacheDir() async {
+    final result = await _channel.invokeMethod<String>('getCacheDir');
+    if (result == null || result.isEmpty) {
+      throw Exception(
+        'Could not resolve the app cache directory '
+        '(host channel returned nothing).',
+      );
+    }
+    return result;
+  }
+
+  /// App files dir (Android: Context.filesDir) from the host channel.
+  /// Throws a clear [Exception] when the host returns nothing.
+  static Future<String> getFilesDir() async {
+    final result = await _channel.invokeMethod<String>('getFilesDir');
+    if (result == null || result.isEmpty) {
+      throw Exception(
+        'Could not resolve the app files directory '
+        '(host channel returned nothing).',
+      );
+    }
+    return result;
+  }
+
   /// Register the handler for links shared into the app from other apps
   /// (ACTION_SEND / text/plain — MainActivity forwards Intent.EXTRA_TEXT
   /// as the 'sharedLink' method call). Call once at startup.
